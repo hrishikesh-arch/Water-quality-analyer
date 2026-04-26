@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AquaPure | Water Quality Analysis Tool</title>
+    <meta name="description"
+        content="Analyze your water quality against WHO and BIS standards. Track your history with charts. Sign in to save your data.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Firebase SDKs (compat v9) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        :root {
+            --primary: #2193b0;
+            --secondary: #6dd5ed;
+            --bg-dark: #0f172a;
+            --glass: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.15);
+            --text: #f8fafc;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* ── Wave Background ── */
+        .ocean {
+            height: 80px;
+            width: 100%;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            background: #015871;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .wave {
+            background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/85486/wave.svg) repeat-x;
+            position: absolute;
+            top: -198px;
+            width: 6400px;
+            height: 198px;
+            animation: wave 7s cubic-bezier(0.36, 0.45, 0.63, 0.53) infinite;
+            transform: translate3d(0, 0, 0);
+        }
+
+        .wave:nth-of-type(2) {
+            top: -175px;
+            animation: wave 7s cubic-bezier(0.36, 0.45, 0.63, 0.53) -.125s infinite, swell 7s ease -1.25s infinite;
+            opacity: 0.8;
+        }
+
+        @keyframes wave {
+            0% {
+                margin-left: 0;
+            }
+
+            100% {
+                margin-left: -1600px;
+            }
+        }
+
+        @keyframes swell {
+
+            0%,
+            100% {
+                transform: translate3d(0, -25px, 0);
+            }
+
+            50% {
+                transform: translate3d(0, 5px, 0);
+            }
+        }
+
+        /* Radial glow bg */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 20% 30%, rgba(33, 147, 176, 0.12) 0%, transparent 60%),
+                radial-gradient(circle at 80% 70%, rgba(109, 213, 237, 0.08) 0%, transparent 60%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ── Navigation ── */
+        nav {
+            padding: 22px 8%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .back-link {
+            color: var(--secondary);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+
+        .back-link:hover {
+            opacity: 1;
+        }
+
+        .logo {
+            font-size: 1.6rem;
+            font-weight: 800;
+            background: linear-gradient(to right, #6dd5ed, #2193b0);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* ── Auth Section ── */
+        .auth-section {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .user-info {
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 2px solid var(--secondary);
+        }
+
+        .user-name {
+            font-size: 0.9rem;
+            color: #cbd5e1;
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .btn-signout {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid var(--glass-border);
+            color: #94a3b8;
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-signout:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--text);
+        }
+
+        .btn-signin {
+            background: linear-gradient(to right, #2193b0, #6dd5ed);
+            color: white;
+            padding: 10px 22px;
+            border-radius: 10px;
+            border: none;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px -5px rgba(33, 147, 176, 0.5);
+        }
+
+        .btn-signin:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px -5px rgba(33, 147, 176, 0.6);
+        }
+
+        .btn-signin svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* ── Page Layout ── */
+        .page-wrapper {
+            position: relative;
+            z-index: 1;
+            padding: 110px 8% 120px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* ── Auth Prompt Banner ── */
+        .auth-prompt {
+            background: rgba(33, 147, 176, 0.1);
+            border: 1px solid rgba(33, 147, 176, 0.3);
+            border-radius: 16px;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 32px;
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+
+        .auth-prompt span {
+            font-size: 1.4rem;
+        }
+
+        #auth-prompt {
+            transition: all 0.3s;
+        }
+
+        #auth-prompt.hidden {
+            display: none;
+        }
+
+        /* ── Main Grid ── */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            align-items: start;
+        }
+
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .page-wrapper {
+                padding: 100px 5% 100px;
+            }
+        }
+
+        /* ── Hero Section ── */
+        .hero-section h1 {
+            font-size: clamp(2.2rem, 4vw, 3.5rem);
+            font-weight: 800;
+            background: linear-gradient(to right, #6dd5ed, #2193b0);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+            line-height: 1.1;
+        }
+
+        .hero-section p {
+            font-size: 1rem;
+            line-height: 1.7;
+            color: #94a3b8;
+            margin-bottom: 28px;
+        }
+
+        .quote-card {
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            padding: 20px 24px;
+            border-radius: 16px;
+            border-left: 3px solid var(--secondary);
+            font-size: 0.9rem;
+            color: #cbd5e1;
+            font-style: italic;
+            margin-bottom: 28px;
+        }
+
+        /* ── Standards Reference ── */
+        .standards-card {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 20px 24px;
+        }
+
+        .standards-card h4 {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--secondary);
+            margin-bottom: 14px;
+        }
+
+        .standard-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 0.88rem;
+        }
+
+        .standard-row:last-child {
+            border-bottom: none;
+        }
+
+        .standard-row .param {
+            color: #cbd5e1;
+        }
+
+        .standard-row .limit {
+            color: var(--secondary);
+            font-weight: 600;
+        }
+
+        /* ── Glass Card (Form) ── */
+        .glass-card {
+            background: var(--glass);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 36px;
+            box-shadow: 0 8px 40px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        .glass-card h2 {
+            font-size: 1.4rem;
+            margin-bottom: 28px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #cbd5e1;
+            font-size: 0.88rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--secondary);
+            background: rgba(255, 255, 255, 0.09);
+            box-shadow: 0 0 0 4px rgba(109, 213, 237, 0.1);
+        }
+
+        .form-group input::placeholder {
+            color: #475569;
+        }
+
+        .btn-analyze {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(to right, #2193b0, #6dd5ed);
+            color: white;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            margin-top: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-analyze:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px -5px rgba(33, 147, 176, 0.55);
+        }
+
+        .btn-analyze:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ── Results Section ── */
+        .results-section {
+            margin-top: 48px;
+            display: none;
+            animation: fadeUp 0.5s ease-out;
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .results-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .results-header h2 {
+            font-size: 1.6rem;
+            font-weight: 700;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 999px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-size: 0.85rem;
+        }
+
+        .status-safe {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.4);
+        }
+
+        .status-unsafe {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 900px) {
+            .metric-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 480px) {
+            .metric-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .metric-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--glass-border);
+            padding: 18px;
+            border-radius: 16px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .metric-card.safe-card {
+            border-color: rgba(74, 222, 128, 0.3);
+        }
+
+        .metric-card.unsafe-card {
+            border-color: rgba(248, 113, 113, 0.3);
+        }
+
+        .metric-card .m-label {
+            font-size: 0.78rem;
+            color: #94a3b8;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-card .m-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .metric-card .m-status {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Progress bar inside metric card */
+        .m-bar-track {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 999px;
+            margin: 10px 0 4px;
+            overflow: hidden;
+        }
+
+        .m-bar-fill {
+            height: 100%;
+            border-radius: 999px;
+            transition: width 0.8s ease;
+        }
+
+        .m-bar-fill.safe {
+            background: linear-gradient(to right, #22c55e, #4ade80);
+        }
+
+        .m-bar-fill.unsafe {
+            background: linear-gradient(to right, #ef4444, #f87171);
+        }
+
+        .m-pct {
+            font-size: 0.72rem;
+            color: #64748b;
+        }
+
+        .status-text-safe {
+            color: #4ade80;
+        }
+
+        .status-text-unsafe {
+            color: #f87171;
+        }
+
+        .recommendation-card {
+            background: rgba(255, 255, 255, 0.04);
+            padding: 22px 26px;
+            border-radius: 18px;
+            border-left: 4px solid var(--secondary);
+        }
+
+        .recommendation-card h3 {
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            color: var(--secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .recommendation-card p {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #cbd5e1;
+        }
+
+        .warnings {
+            margin-top: 14px;
+            list-style: none;
+        }
+
+        .warnings li {
+            font-size: 0.85rem;
+            color: #fca5a5;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            line-height: 1.4;
+        }
+
+        .warnings li::before {
+            content: "⚠️";
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        /* ── Chart Section ── */
+        .chart-section {
+            margin-top: 40px;
+            display: none;
+            animation: fadeUp 0.5s ease-out;
+        }
+
+        .chart-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .chart-header h2 {
+            font-size: 1.4rem;
+            font-weight: 700;
+        }
+
+        .chart-header .record-count {
+            font-size: 0.85rem;
+            color: #64748b;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-card {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 24px;
+            position: relative;
+        }
+
+        .chart-card h4 {
+            font-size: 0.88rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+        }
+
+        .chart-card canvas {
+            max-height: 180px;
+        }
+
+        /* ── Save Indicator ── */
+        .save-toast {
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.4);
+            color: #4ade80;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            z-index: 999;
+            display: none;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        /* ── Loading Spinner ── */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Fixed Ocean Wave at Bottom -->
+    <div class="ocean">
+        <div class="wave"></div>
+        <div class="wave"></div>
+    </div>
+
+    <!-- Save Toast Notification -->
+    <div class="save-toast" id="saveToast">✓ Analysis saved to your history</div>
+
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-left">
+            <a href="/" class="back-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+            </a>
+            <div class="logo">AquaPure</div>
+        </div>
+
+        <div class="auth-section">
+            <!-- Shown when signed in -->
+            <div class="user-info" id="userInfo">
+                <img id="userAvatar" class="user-avatar" src="" alt="avatar">
+                <span class="user-name" id="userName"></span>
+                <button class="btn-signout" onclick="handleSignOut()">Sign Out</button>
+            </div>
+            <!-- Shown when signed out -->
+            <button class="btn-signin" id="signInBtn" onclick="handleSignIn()">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        fill="#4285F4" />
+                    <path
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        fill="#34A853" />
+                    <path
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                        fill="#FBBC05" />
+                    <path
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                        fill="#EA4335" />
+                </svg>
+                Sign in with Google
+            </button>
+        </div>
+    </nav>
+
+    <!-- Page Content -->
+    <div class="page-wrapper">
+
+        <!-- Auth prompt banner -->
+        <div class="auth-prompt" id="authPrompt">
+            <span>💡</span>
+            <p>Sign in with Google to <strong>save your analyses</strong> and view your <strong>water quality
+                    history</strong> over time.</p>
+        </div>
+
+        <!-- Main 2-col grid -->
+        <div class="main-grid">
+            <!-- Left: Hero + info -->
+            <div class="hero-section">
+                <h1>AquaPure<br>Analysis Tool</h1>
+                <p>Enter your water test values below. We analyze them against <strong>WHO & BIS global
+                        standards</strong> and give you an instant safety verdict — no server needed.</p>
+
+                <div class="quote-card">
+                    "Water is the driving force of all nature." — Leonardo da Vinci
+                </div>
+
+                <div class="standards-card">
+                    <h4>🌍 Safety Standards Reference</h4>
+                    <div class="standard-row">
+                        <span class="param">pH Level</span>
+                        <span class="limit">6.5 – 8.5</span>
+                    </div>
+                    <div class="standard-row">
+                        <span class="param">TDS (Total Dissolved Solids)</span>
+                        <span class="limit">≤ 500 mg/L ideal · ≤ 1000 mg/L permissible</span>
+                    </div>
+                    <div class="standard-row">
+                        <span class="param">Turbidity</span>
+                        <span class="limit">≤ 5 NTU</span>
+                    </div>
+                    <div class="standard-row">
+                        <span class="param">Total Hardness</span>
+                        <span class="limit">≤ 300 mg/L ideal · ≤ 600 mg/L permissible</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Analysis Form -->
+            <div class="glass-card">
+                <h2>🔬 Water Analysis</h2>
+                <form id="waterForm">
+                    <div class="form-group">
+                        <label for="ph">pH Level</label>
+                        <input type="number" step="0.01" id="ph" min="0" max="14" placeholder="e.g., 7.2" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="tds">TDS — Total Dissolved Solids (mg/L)</label>
+                        <input type="number" id="tds" min="0" placeholder="e.g., 350" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="turbidity">Turbidity (NTU)</label>
+                        <input type="number" step="0.01" id="turbidity" min="0" placeholder="e.g., 1.5" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="hardness">Total Hardness (mg/L)</label>
+                        <input type="number" id="hardness" min="0" placeholder="e.g., 200" required>
+                    </div>
+                    <button type="submit" class="btn-analyze" id="analyzeBtn">Analyze Water Quality</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Results Section (revealed after analysis) -->
+        <div class="results-section" id="resultsSection">
+            <div class="results-header">
+                <h2>Analysis Results</h2>
+                <div class="status-badge" id="statusBadge">SAFE</div>
+            </div>
+
+            <div class="metric-grid">
+                <div class="metric-card" id="card-ph">
+                    <div class="m-label">pH Level</div>
+                    <div class="m-value" id="res-ph">—</div>
+                    <div class="m-bar-track">
+                        <div class="m-bar-fill" id="bar-ph" style="width:0%"></div>
+                    </div>
+                    <div class="m-pct" id="pct-ph"></div>
+                    <div class="m-status" id="res-ph-status">—</div>
+                </div>
+                <div class="metric-card" id="card-tds">
+                    <div class="m-label">TDS (mg/L)</div>
+                    <div class="m-value" id="res-tds">—</div>
+                    <div class="m-bar-track">
+                        <div class="m-bar-fill" id="bar-tds" style="width:0%"></div>
+                    </div>
+                    <div class="m-pct" id="pct-tds"></div>
+                    <div class="m-status" id="res-tds-status">—</div>
+                </div>
+                <div class="metric-card" id="card-turbidity">
+                    <div class="m-label">Turbidity (NTU)</div>
+                    <div class="m-value" id="res-turbidity">—</div>
+                    <div class="m-bar-track">
+                        <div class="m-bar-fill" id="bar-turbidity" style="width:0%"></div>
+                    </div>
+                    <div class="m-pct" id="pct-turbidity"></div>
+                    <div class="m-status" id="res-turbidity-status">—</div>
+                </div>
+                <div class="metric-card" id="card-hardness">
+                    <div class="m-label">Hardness (mg/L)</div>
+                    <div class="m-value" id="res-hardness">—</div>
+                    <div class="m-bar-track">
+                        <div class="m-bar-fill" id="bar-hardness" style="width:0%"></div>
+                    </div>
+                    <div class="m-pct" id="pct-hardness"></div>
+                    <div class="m-status" id="res-hardness-status">—</div>
+                </div>
+            </div>
+
+            <div class="recommendation-card">
+                <h3>Recommendation</h3>
+                <p id="recommendationText">—</p>
+                <ul class="warnings" id="warningsList"></ul>
+            </div>
+        </div>
+
+        <!-- Chart Section (revealed after analysis if signed in + history exists) -->
+        <div class="chart-section" id="chartSection">
+            <div class="chart-header">
+                <h2>📈 Your Water Quality History</h2>
+                <span class="record-count" id="recordCount">— records</span>
+            </div>
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h4>pH Level</h4>
+                    <canvas id="chartPh"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h4>TDS (mg/L)</h4>
+                    <canvas id="chartTds"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h4>Turbidity (NTU)</h4>
+                    <canvas id="chartTurbidity"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h4>Hardness (mg/L)</h4>
+                    <canvas id="chartHardness"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /page-wrapper -->
+
+    <script>
+        // ══════════════════════════════════════════════════════════
+        // FIREBASE CONFIGURATION
+        // Replace these placeholder values with your own Firebase project config.
+        // Get them from: https://console.firebase.google.com
+        //   → Project Settings → Your Apps → Web App → SDK Setup
+        // On Vercel: set these as Environment Variables in your project settings.
+        // ══════════════════════════════════════════════════════════
+        const firebaseConfig = {
+            apiKey: "YOUR_FIREBASE_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // ── Init Firebase ──
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let currentUser = null;
+        let chartInstances = {};
+
+        // ── Auth State Listener ──
+        auth.onAuthStateChanged(user => {
+            currentUser = user;
+            if (user) {
+                document.getElementById('userInfo').style.display = 'flex';
+                document.getElementById('signInBtn').style.display = 'none';
+                document.getElementById('authPrompt').classList.add('hidden');
+                document.getElementById('userAvatar').src = user.photoURL || '';
+                document.getElementById('userName').textContent = user.displayName || user.email;
+            } else {
+                document.getElementById('userInfo').style.display = 'none';
+                document.getElementById('signInBtn').style.display = 'flex';
+                document.getElementById('authPrompt').classList.remove('hidden');
+            }
+        });
+
+        // ── Google Sign-In ──
+        function handleSignIn() {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            auth.signInWithPopup(provider).catch(err => {
+                console.error('Sign-in error:', err);
+                alert('Sign-in failed: ' + err.message);
+            });
+        }
+
+        function handleSignOut() {
+            auth.signOut();
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // WATER QUALITY ANALYSIS (JavaScript port of Python logic)
+        // ══════════════════════════════════════════════════════════
+        function analyzeWater(data) {
+            const results = {};
+            let is_safe = true;
+            const warnings = [];
+
+            // pH: safe range 6.5 – 8.5
+            const ph = parseFloat(data.ph);
+            if (ph < 6.5 || ph > 8.5) {
+                is_safe = false;
+                warnings.push(`pH level (${ph}) is outside the recommended range of 6.5–8.5.`);
+            }
+            results.ph = { value: ph, status: (ph >= 6.5 && ph <= 8.5) ? 'Safe' : 'Unsafe' };
+
+            // TDS: ideal ≤ 500, permissible ≤ 1000 mg/L
+            const tds = parseFloat(data.tds);
+            if (tds > 1000) {
+                is_safe = false;
+                warnings.push(`TDS level (${tds} mg/L) is too high — exceeds permissible limit of 1000 mg/L.`);
+            } else if (tds > 500) {
+                warnings.push(`TDS level (${tds} mg/L) is acceptable but above the ideal limit of 500 mg/L.`);
+            }
+            results.tds = { value: tds, status: tds <= 1000 ? 'Safe' : 'Unsafe' };
+
+            // Turbidity: ≤ 5 NTU
+            const turbidity = parseFloat(data.turbidity);
+            if (turbidity > 5) {
+                is_safe = false;
+                warnings.push(`Turbidity (${turbidity} NTU) exceeds the limit of 5 NTU.`);
+            }
+            results.turbidity = { value: turbidity, status: turbidity <= 5 ? 'Safe' : 'Unsafe' };
+
+            // Hardness: ideal ≤ 300, permissible ≤ 600 mg/L
+            const hardness = parseFloat(data.hardness);
+            if (hardness > 600) {
+                is_safe = false;
+                warnings.push(`Hardness (${hardness} mg/L) exceeds the permissible limit of 600 mg/L.`);
+            }
+            results.hardness = { value: hardness, status: hardness <= 600 ? 'Safe' : 'Unsafe' };
+
+            return {
+                is_safe,
+                results,
+                warnings,
+                recommendation: is_safe
+                    ? 'Water is safe for consumption. Continue regular testing every 3–6 months.'
+                    : 'Water requires treatment (e.g., RO filtration, boiling, activated carbon filter) before use.'
+            };
+        }
+
+        // ── Form Submit ──
+        document.getElementById('waterForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Analyzing…';
+
+            const data = {
+                ph: document.getElementById('ph').value,
+                tds: document.getElementById('tds').value,
+                turbidity: document.getElementById('turbidity').value,
+                hardness: document.getElementById('hardness').value
+            };
+
+            // Small delay for effect
+            await new Promise(r => setTimeout(r, 600));
+
+            const result = analyzeWater(data);
+            displayResults(result);
+
+            // Save to Firestore if signed in
+            if (currentUser) {
+                await saveToFirestore(result);
+                await loadAndRenderCharts();
+            }
+
+            btn.disabled = false;
+            btn.innerHTML = 'Analyze Water Quality';
+            document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+        });
+
+        // ── Display Results ──
+        function displayResults(data) {
+            document.getElementById('resultsSection').style.display = 'block';
+
+            const badge = document.getElementById('statusBadge');
+            badge.textContent = data.is_safe ? '✓ SAFE' : '✗ UNSAFE';
+            badge.className = `status-badge ${data.is_safe ? 'status-safe' : 'status-unsafe'}`;
+
+            // Normalization denominators & labels
+            const norms = {
+                ph: { max: 8.5, label: '% of max pH' },
+                tds: { max: 1000, label: '% of limit' },
+                turbidity: { max: 5, label: '% of limit' },
+                hardness: { max: 600, label: '% of limit' }
+            };
+
+            ['ph', 'tds', 'turbidity', 'hardness'].forEach(m => {
+                const r = data.results[m];
+                const isSafe = r.status === 'Safe';
+                const pct = Math.min((r.value / norms[m].max) * 100, 120).toFixed(1);
+
+                document.getElementById(`res-${m}`).textContent = r.value;
+                const statusEl = document.getElementById(`res-${m}-status`);
+                statusEl.textContent = r.status.toUpperCase();
+                statusEl.className = `m-status ${isSafe ? 'status-text-safe' : 'status-text-unsafe'}`;
+
+                const barEl = document.getElementById(`bar-${m}`);
+                barEl.style.width = Math.min(pct, 100) + '%';
+                barEl.className = `m-bar-fill ${isSafe ? 'safe' : 'unsafe'}`;
+
+                document.getElementById(`pct-${m}`).textContent = `${pct}% of safe limit`;
+
+                const card = document.getElementById(`card-${m}`);
+                card.className = `metric-card ${isSafe ? 'safe-card' : 'unsafe-card'}`;
+            });
+
+            document.getElementById('recommendationText').textContent = data.recommendation;
+
+            const list = document.getElementById('warningsList');
+            list.innerHTML = '';
+            data.warnings.forEach(w => {
+                const li = document.createElement('li');
+                li.textContent = w;
+                list.appendChild(li);
+            });
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // FIRESTORE: Save & Load
+        // ══════════════════════════════════════════════════════════
+        async function saveToFirestore(result) {
+            try {
+                const docRef = db
+                    .collection('users')
+                    .doc(currentUser.uid)
+                    .collection('analyses')
+                    .doc();
+
+                await docRef.set({
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    is_safe: result.is_safe,
+                    ph: result.results.ph.value,
+                    tds: result.results.tds.value,
+                    turbidity: result.results.turbidity.value,
+                    hardness: result.results.hardness.value,
+                    ph_status: result.results.ph.status,
+                    tds_status: result.results.tds.status,
+                    turbidity_status: result.results.turbidity.status,
+                    hardness_status: result.results.hardness.status
+                });
+
+                showSaveToast();
+            } catch (err) {
+                console.error('Firestore save failed:', err);
+            }
+        }
+
+        async function loadHistory() {
+            if (!currentUser) return [];
+            try {
+                const snap = await db
+                    .collection('users')
+                    .doc(currentUser.uid)
+                    .collection('analyses')
+                    .orderBy('timestamp', 'asc')
+                    .limitToLast(20)
+                    .get();
+
+                return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch (err) {
+                console.error('Firestore load failed:', err);
+                return [];
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // CHART.JS: Render History Charts
+        // ══════════════════════════════════════════════════════════
+        async function loadAndRenderCharts() {
+            const records = await loadHistory();
+            if (records.length < 1) return;
+
+            document.getElementById('chartSection').style.display = 'block';
+            document.getElementById('recordCount').textContent = `${records.length} record${records.length > 1 ? 's' : ''}`;
+
+            const labels = records.map((r, i) => {
+                if (r.timestamp && r.timestamp.toDate) {
+                    const d = r.timestamp.toDate();
+                    return `${d.getDate()}/${d.getMonth() + 1} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                }
+                return `#${i + 1}`;
+            });
+
+            const chartDefs = [
+                {
+                    canvasId: 'chartPh',
+                    key: 'chartPh',
+                    values: records.map(r => r.ph),
+                    label: 'pH',
+                    color: '#6dd5ed',
+                    safeMin: 6.5,
+                    safeMax: 8.5
+                },
+                {
+                    canvasId: 'chartTds',
+                    key: 'chartTds',
+                    values: records.map(r => r.tds),
+                    label: 'TDS (mg/L)',
+                    color: '#a78bfa',
+                    safeMin: null,
+                    safeMax: 500
+                },
+                {
+                    canvasId: 'chartTurbidity',
+                    key: 'chartTurbidity',
+                    values: records.map(r => r.turbidity),
+                    label: 'Turbidity (NTU)',
+                    color: '#f59e0b',
+                    safeMin: null,
+                    safeMax: 5
+                },
+                {
+                    canvasId: 'chartHardness',
+                    key: 'chartHardness',
+                    values: records.map(r => r.hardness),
+                    label: 'Hardness (mg/L)',
+                    color: '#34d399',
+                    safeMin: null,
+                    safeMax: 300
+                }
+            ];
+
+            chartDefs.forEach(def => {
+                // Destroy previous instance if exists
+                if (chartInstances[def.key]) {
+                    chartInstances[def.key].destroy();
+                }
+
+                const ctx = document.getElementById(def.canvasId).getContext('2d');
+
+                // Build annotation datasets for safe limits
+                const datasets = [
+                    {
+                        label: def.label,
+                        data: def.values,
+                        borderColor: def.color,
+                        backgroundColor: def.color + '22',
+                        borderWidth: 2.5,
+                        pointBackgroundColor: def.values.map((v, i) => {
+                            // Color point red if this record was the latest/current
+                            return i === def.values.length - 1 ? '#f87171' : def.color;
+                        }),
+                        pointRadius: def.values.map((_, i) => i === def.values.length - 1 ? 6 : 3),
+                        tension: 0.4,
+                        fill: true
+                    }
+                ];
+
+                // Add safe max line
+                if (def.safeMax !== null) {
+                    datasets.push({
+                        label: 'Safe limit',
+                        data: Array(records.length).fill(def.safeMax),
+                        borderColor: 'rgba(248, 113, 113, 0.5)',
+                        borderWidth: 1.5,
+                        borderDash: [6, 4],
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0
+                    });
+                }
+
+                chartInstances[def.key] = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                labels: {
+                                    color: '#94a3b8',
+                                    font: { family: 'Outfit', size: 11 },
+                                    boxWidth: 12
+                                }
+                            },
+                            tooltip: {
+                                backgroundColor: '#1e293b',
+                                titleColor: '#f8fafc',
+                                bodyColor: '#94a3b8',
+                                borderColor: 'rgba(255,255,255,0.1)',
+                                borderWidth: 1,
+                                padding: 10,
+                                cornerRadius: 10
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: {
+                                    color: '#64748b',
+                                    font: { family: 'Outfit', size: 10 },
+                                    maxRotation: 45
+                                },
+                                grid: { color: 'rgba(255,255,255,0.04)' }
+                            },
+                            y: {
+                                ticks: {
+                                    color: '#64748b',
+                                    font: { family: 'Outfit', size: 10 }
+                                },
+                                grid: { color: 'rgba(255,255,255,0.06)' }
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        // ── Save Toast ──
+        function showSaveToast() {
+            const toast = document.getElementById('saveToast');
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 3000);
+        }
+    </script>
+
+</body>
+
+</html>
