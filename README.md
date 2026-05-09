@@ -3,7 +3,8 @@
 AquaPure is a modern, responsive web application that helps users analyze their water quality instantly. By inputting parameters like pH, TDS (Total Dissolved Solids), Turbidity, and Hardness, the app provides real-time safety assessments and actionable recommendations to improve water quality.
 
 ## Live Demo
-🚀 **[View Live Application](https://hrishikesh-arch.github.io/Water-quality-analyer/)**
+🚀 **[View Live Application on Netlify](https://water-quality-analyser-hrishikesh.netlify.app)**
+🚀 **[View Live Application on GitHub Pages](https://hrishikesh-arch.github.io/Water-quality-analyer/)**
 
 ## Key Features
 - **Real-Time Analysis:** Instantly calculates if your water parameters fall within safe, standard limits.
